@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,8 +18,20 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { User, LogOut, Settings } from "lucide-react";
 
 const menuItems = [
   {
@@ -50,6 +62,41 @@ const menuItems = [
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    // Get initial session
+    const getUser = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    getUser();
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  };
+
+  const getUserInitials = () => {
+    if (!user) return "U";
+    const email = user.email || "";
+    return email.charAt(0).toUpperCase();
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -74,7 +121,6 @@ export function Navbar() {
                       href={item.href}
                       className="group inline-flex h-10 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none disabled:pointer-events-none disabled:opacity-50 data-[active]:bg-accent/50 data-[state=open]:bg-accent/50"
                     >
-                      
                       {item.label}
                     </Link>
                   </NavigationMenuLink>
@@ -86,12 +132,71 @@ export function Navbar() {
 
         <div className="flex items-center gap-2 md:gap-3">
           <ThemeToggle />
-          <Button variant="ghost" asChild className="hidden md:flex">
-            <Link href="#contacto">Iniciar Sesión</Link>
-          </Button>
-          <Button asChild className="hidden md:flex font-semibold">
-            <Link href="#contacto">Comenzar Gratis</Link>
-          </Button>
+
+          {user ? (
+            /* User is logged in - Show avatar dropdown */
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="relative h-9 w-9 rounded-full"
+                >
+                  <Avatar className="h-9 w-9">
+                    <AvatarImage
+                      src={user.user_metadata?.avatar_url}
+                      alt={user.email || "Usuario"}
+                    />
+                    <AvatarFallback className="bg-primary text-primary-foreground">
+                      {getUserInitials()}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {user.user_metadata?.full_name || "Usuario"}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard" className="cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    Dashboard
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/perfil" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Perfil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleSignOut}
+                  className="cursor-pointer text-red-600 focus:text-red-600"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Cerrar sesión
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            /* User is not logged in - Show auth buttons */
+            <>
+              <Button variant="ghost" asChild className="hidden md:flex">
+                <Link href="/auth/login">Iniciar Sesión</Link>
+              </Button>
+              <Button asChild className="hidden md:flex font-semibold">
+                <Link href="/auth/register">Comenzar Gratis</Link>
+              </Button>
+            </>
+          )}
 
           {/* Mobile Menu */}
           <Sheet open={open} onOpenChange={setOpen}>
@@ -174,53 +279,96 @@ export function Navbar() {
 
                 {/* CTA Buttons */}
                 <div className="flex flex-col gap-3">
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3"
-                  >
-                    <Link href="#contacto" onClick={() => setOpen(false)}>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="mr-2"
+                  {user ? (
+                    <>
+                      <Button
+                        asChild
+                        className="w-full justify-start h-auto py-3 font-semibold"
                       >
-                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
-                      </svg>
-                      Iniciar Sesión
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="w-full justify-start h-auto py-3 font-semibold"
-                  >
-                    <Link href="#contacto" onClick={() => setOpen(false)}>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="mr-2"
+                        <Link href="/dashboard" onClick={() => setOpen(false)}>
+                          <User className="mr-2 h-5 w-5" />
+                          Dashboard
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="w-full justify-start h-auto py-3"
                       >
-                        <path d="M5 12h14" />
-                        <path d="m12 5 7 7-7 7" />
-                      </svg>
-                      Comenzar Gratis
-                    </Link>
-                  </Button>
+                        <Link href="/perfil" onClick={() => setOpen(false)}>
+                          <Settings className="mr-2 h-5 w-5" />
+                          Mi Perfil
+                        </Link>
+                      </Button>
+                      <Separator className="my-2" />
+                      <Button
+                        onClick={() => {
+                          handleSignOut();
+                          setOpen(false);
+                        }}
+                        variant="ghost"
+                        className="w-full justify-start h-auto py-3 text-red-600 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      >
+                        <LogOut className="mr-2 h-5 w-5" />
+                        Cerrar sesión
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="w-full justify-start h-auto py-3"
+                      >
+                        <Link href="/auth/login" onClick={() => setOpen(false)}>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="mr-2"
+                          >
+                            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                          </svg>
+                          Iniciar Sesión
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        className="w-full justify-start h-auto py-3 font-semibold"
+                      >
+                        <Link
+                          href="/auth/register"
+                          onClick={() => setOpen(false)}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="mr-2"
+                          >
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <line x1="19" x2="19" y1="8" y2="14" />
+                            <line x1="22" x2="16" y1="11" y2="11" />
+                          </svg>
+                          Comenzar Gratis
+                        </Link>
+                      </Button>
+                    </>
+                  )}
                 </div>
 
                 <Separator className="my-4" />
